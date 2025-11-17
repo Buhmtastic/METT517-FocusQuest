@@ -1,5 +1,10 @@
-import type { Badge } from '../types/gamification';
-import type { SessionLogEntry } from '../types/session';
+import type { Badge, BadgeConditionStore } from '../types/gamification';
+
+const MIN_ENERGY_HIGH = 80;
+const MIN_SESSIONS_HIGH_ENERGY = 3;
+const SESSIONS_FOR_CENTURY = 100;
+const DAYS_FOR_WEEK_WARRIOR = 7;
+const DAYS_FOR_CONSISTENT = 5;
 
 export const BADGES: Badge[] = [
   {
@@ -7,7 +12,7 @@ export const BADGES: Badge[] = [
     icon: '🎯',
     title: 'First Quest',
     description: 'Complete your first focus session',
-    condition: (store: any) => store.gamification.stats.totalSessions >= 1,
+    condition: (store: BadgeConditionStore) => store.gamification.stats.totalSessions >= 1,
     rarity: 'common'
   },
   {
@@ -15,7 +20,7 @@ export const BADGES: Badge[] = [
     icon: '🗓️',
     title: 'Week Warrior',
     description: 'Achieve a 7-day streak',
-    condition: (store: any) => store.gamification.streak.longest >= 7,
+    condition: (store: BadgeConditionStore) => store.gamification.streak.longest >= DAYS_FOR_WEEK_WARRIOR,
     rarity: 'rare'
   },
   {
@@ -23,7 +28,7 @@ export const BADGES: Badge[] = [
     icon: '💯',
     title: 'Century',
     description: 'Complete 100 total focus sessions',
-    condition: (store: any) => store.gamification.stats.totalSessions >= 100,
+    condition: (store: BadgeConditionStore) => store.gamification.stats.totalSessions >= SESSIONS_FOR_CENTURY,
     rarity: 'epic'
   },
   {
@@ -31,11 +36,11 @@ export const BADGES: Badge[] = [
     icon: '⚡',
     title: 'High Energy',
     description: '3 consecutive sessions with 80%+ energy',
-    condition: (store: any) => {
-      const history = store.history;
-      if (history.length < 3) return false;
-      const lastThree = history.slice(-3);
-      return lastThree.every((session: SessionLogEntry) => (session.energy || 0) >= 80);
+    condition: (store: BadgeConditionStore) => {
+      const { history } = store;
+      if (history.length < MIN_SESSIONS_HIGH_ENERGY) return false;
+      const lastThree = history.slice(-MIN_SESSIONS_HIGH_ENERGY);
+      return lastThree.every((session) => (session.energy ?? 0) >= MIN_ENERGY_HIGH);
     },
     rarity: 'rare'
   },
@@ -44,7 +49,7 @@ export const BADGES: Badge[] = [
     icon: '✅',
     title: 'Consistent',
     description: 'Complete sessions 5 days in a row',
-    condition: (store: any) => store.gamification.streak.current >= 5,
+    condition: (store: BadgeConditionStore) => store.gamification.streak.current >= DAYS_FOR_CONSISTENT,
     rarity: 'common'
   },
 ];

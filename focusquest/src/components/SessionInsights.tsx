@@ -4,11 +4,23 @@ import dayjs from 'dayjs'
 import { useSessionStore } from '../state/sessionStore.ts'
 import { aggregateDailyMetrics, filterTodayEntries } from '../utils/metrics.ts'
 
-const emotionStatement = (score: number) => {
+/**
+ * Emotion score thresholds for providing contextual feedback
+ */
+const EMOTION_THRESHOLD_FLOW = 4.2
+const EMOTION_THRESHOLD_STEADY = 3.5
+const EMOTION_THRESHOLD_DIPPING = 2.5
+
+/**
+ * Returns contextual feedback based on average emotion score.
+ * @param score - Average emotion score (1-5 scale)
+ * @returns Actionable feedback message
+ */
+const emotionStatement = (score: number): string => {
   if (!score) return 'Log a focus block to reveal mood insights.'
-  if (score >= 4.2) return 'You are in a strong flow state - ride the momentum.'
-  if (score >= 3.5) return 'Mood is steady. A mindful break could elevate energy.'
-  if (score >= 2.5) return 'Energy is dipping. Consider a recovery walk or hydration.'
+  if (score >= EMOTION_THRESHOLD_FLOW) return 'You are in a strong flow state - ride the momentum.'
+  if (score >= EMOTION_THRESHOLD_STEADY) return 'Mood is steady. A mindful break could elevate energy.'
+  if (score >= EMOTION_THRESHOLD_DIPPING) return 'Energy is dipping. Consider a recovery walk or hydration.'
   return 'You are running low - schedule a longer recharge before the next sprint.'
 }
 

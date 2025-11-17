@@ -1,9 +1,19 @@
 import type { SessionLogEntry } from '../types/session.ts'
-import { isToday } from './time.ts'
+import { isToday, MS_PER_MINUTE } from './time.ts'
 
-export const filterTodayEntries = (history: SessionLogEntry[]) =>
+/**
+ * Filters session history to include only today's entries.
+ * @param history - Complete session history
+ * @returns Sessions that occurred today
+ */
+export const filterTodayEntries = (history: SessionLogEntry[]): SessionLogEntry[] =>
   history.filter((entry) => isToday(entry.startedAt))
 
+/**
+ * Aggregates daily metrics from session entries.
+ * @param entries - Session log entries to aggregate
+ * @returns Aggregated metrics including session counts and averages
+ */
 export const aggregateDailyMetrics = (entries: SessionLogEntry[]) => {
   if (!entries.length) {
     return {
@@ -17,14 +27,14 @@ export const aggregateDailyMetrics = (entries: SessionLogEntry[]) => {
 
   const totals = entries.reduce(
     (acc, entry) => {
-      const minutes = entry.durationMs / 60000
+      const minutes = entry.durationMs / MS_PER_MINUTE
       if (entry.phase === 'focus') {
         acc.focusMinutes += minutes
       } else {
         acc.breakMinutes += minutes
       }
-      acc.emotionSum += entry.emotion
-      acc.energySum += entry.energy
+      acc.emotionSum += entry.emotion ?? 0
+      acc.energySum += entry.energy ?? 0
       return acc
     },
     {

@@ -5,6 +5,8 @@ import { DailyLog } from './components/DailyLog.tsx'
 import { DailyTrendsChart } from './components/DailyTrendsChart.tsx'
 import { SessionInsights } from './components/SessionInsights.tsx'
 import { SettingsPanel } from './components/SettingsPanel.tsx'
+import { GamificationPanel } from './components/GamificationPanel.tsx'
+import { AchievementToast } from './components/AchievementToast.tsx'
 
 function App() {
   return (
@@ -31,8 +33,9 @@ function App() {
             <SessionQueue />
             <DailyLog />
           </div>
-          <aside className="grid gap-6 lg:grid-rows-[auto_1fr_auto]">
+          <aside className="grid gap-6 lg:grid-rows-[auto_auto_1fr_auto]">
             <DailyTrendsChart />
+            <GamificationPanel />
             <SessionInsights />
             <SettingsPanel />
           </aside>
@@ -47,6 +50,7 @@ function App() {
       </div>
       </main>
       <SessionFeedbackModal />
+      <AchievementToast />
     </>
   )
 }

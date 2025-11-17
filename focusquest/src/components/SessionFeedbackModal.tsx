@@ -6,18 +6,28 @@ import dayjs from 'dayjs'
 import { useSessionStore } from '../state/sessionStore.ts'
 import type { PendingFeedback } from '../types/session.ts'
 
+/**
+ * Emotion scale with emojis for visual feedback
+ */
 const EMOTION_SCALE = [
   { value: 1, label: 'Drained', emoji: '😵' },
   { value: 2, label: 'Tired', emoji: '😓' },
   { value: 3, label: 'Neutral', emoji: '😐' },
   { value: 4, label: 'Engaged', emoji: '🙂' },
   { value: 5, label: 'Flow', emoji: '🤩' },
-]
+] as const
+
+/**
+ * Default values for feedback form
+ */
+const DEFAULT_EMOTION = 3
+const DEFAULT_ENERGY = 50
+const DEFAULT_NOTE = ''
 
 const defaultState = {
-  emotion: 3,
-  energy: 50,
-  note: '',
+  emotion: DEFAULT_EMOTION,
+  energy: DEFAULT_ENERGY,
+  note: DEFAULT_NOTE,
 }
 
 const describePhase = (pending?: PendingFeedback) => {

@@ -1,8 +1,21 @@
+/**
+ * Time conversion constants
+ */
+export const MS_PER_SECOND = 1000;
+export const SECONDS_PER_MINUTE = 60;
+export const MS_PER_MINUTE = MS_PER_SECOND * SECONDS_PER_MINUTE;
+export const MS_PER_DAY = MS_PER_MINUTE * 60 * 24;
+
+/**
+ * Formats duration in milliseconds to MM:SS format.
+ * @param totalMs - Total milliseconds
+ * @returns Formatted string in MM:SS format
+ */
 export const formatDuration = (totalMs: number) => {
   const safeMs = Math.max(0, totalMs)
-  const totalSeconds = Math.floor(safeMs / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
+  const totalSeconds = Math.floor(safeMs / MS_PER_SECOND)
+  const minutes = Math.floor(totalSeconds / SECONDS_PER_MINUTE)
+  const seconds = totalSeconds % SECONDS_PER_MINUTE
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 

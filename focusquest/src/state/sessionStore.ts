@@ -10,9 +10,11 @@ import type {
   TimerStatus,
 } from '../types/session.ts'
 
-import type { GamificationState } from '../types/gamification'
+import type { GamificationState, AchievementNotification } from '../types/gamification'
 import { BADGES } from '../constants/badges.ts'
+import { SKILLS } from '../constants/skills.ts'
 import { calculateLevel } from '../utils/gamification.ts'
+import { MS_PER_MINUTE, MS_PER_DAY } from '../utils/time.ts'
 
 interface SessionStore {
   status: TimerStatus
@@ -23,7 +25,8 @@ interface SessionStore {
   pendingFeedback?: PendingFeedback
   history: SessionLogEntry[]
   settings: SessionSettings
-  gamification: GamificationState // New gamification field
+  gamification: GamificationState
+  achievements: AchievementNotification[]
   start: () => void
   pause: () => void
   resume: () => void
@@ -37,17 +40,56 @@ interface SessionStore {
   setPreset: (presetId: string) => void
   advancePhase: () => void
   removeLogEntry: (id: string) => void
-  // New gamification actions
+  // Gamification actions
   earnXP: (amount: number) => void
   awardBadge: (badgeId: string) => void
   earnCrystals: (amount: number) => void
   spendCrystals: (skillId: string, cost: number) => void
   updateStreak: () => void
   checkAchievements: () => void
+  dismissAchievement: (timestamp: number) => void
 }
 
 const SESSION_STORAGE_KEY = 'focus-sprint-coach::session'
 
+/**
+ * Creates the initial gamification state.
+ */
+const createInitialGamificationState = (): GamificationState => ({
+  level: 0,
+  totalXP: 0,
+  crystals: 0,
+  usedCrystals: 0,
+  badges: [],
+  unlockedSkills: [],
+  streak: {
+    current: 0,
+    longest: 0,
+    lastActiveDate: '',
+    shieldUsed: false,
+  },
+  stats: {
+    totalSessions: 0,
+    totalFocusMinutes: 0,
+    totalRecoveryMinutes: 0,
+    averageEnergy: 0,
+    averageEmotion: 0,
+  },
+})
+
+/**
+ * Creates the initial session settings.
+ */
+const createInitialSettings = (presetId: string): SessionSettings => ({
+  activePresetId: presetId,
+  autoAdvance: false,
+  soundEnabled: true,
+  vibrationsEnabled: false,
+})
+
+/**
+ * Creates the complete initial state for the session store.
+ */
 const createInitialState = () => {
   const preset = findPreset(DEFAULT_PRESET_ID)
   const queue = buildPhaseQueue(preset)
@@ -61,33 +103,9 @@ const createInitialState = () => {
     startedAt: undefined,
     pendingFeedback: undefined,
     history: [] as SessionLogEntry[],
-    settings: {
-      activePresetId: preset.id,
-      autoAdvance: false,
-      soundEnabled: true,
-      vibrationsEnabled: false,
-    } as SessionSettings,
-    gamification: {
-      level: 0,
-      totalXP: 0,
-      crystals: 0,
-      usedCrystals: 0,
-      badges: [],
-      unlockedSkills: [],
-      streak: {
-        current: 0,
-        longest: 0,
-        lastActiveDate: '',
-        shieldUsed: false,
-      },
-      stats: {
-        totalSessions: 0,
-        totalFocusMinutes: 0,
-        totalRecoveryMinutes: 0,
-        averageEnergy: 0,
-        averageEmotion: 0,
-      },
-    } as GamificationState,
+    settings: createInitialSettings(preset.id),
+    gamification: createInitialGamificationState(),
+    achievements: [] as AchievementNotification[],
   }
 }
 
@@ -231,21 +249,28 @@ export const useSessionStore = create<SessionStore>()(
             },
           ]
 
-          // Gamification logic
-          const durationMinutes = entry.durationMs / (1000 * 60)
+          // Gamification logic: Calculate rewards and updated stats
+          const durationMinutes = entry.durationMs / MS_PER_MINUTE
           const xpEarned = Math.floor(durationMinutes)
-          const crystalsEarned = entry.energy ? Math.floor(entry.energy / 20) : 0
 
-          const totalSessions = state.gamification.stats.totalSessions + 1
-          const totalFocusMinutes = state.gamification.stats.totalFocusMinutes + (entry.phase === 'focus' ? durationMinutes : 0)
-          const totalRecoveryMinutes = state.gamification.stats.totalRecoveryMinutes + (entry.phase === 'break' ? durationMinutes : 0)
-          const averageEnergy = (state.gamification.stats.averageEnergy * state.gamification.stats.totalSessions + (entry.energy || 0)) / totalSessions
-          const averageEmotion = (state.gamification.stats.averageEmotion * state.gamification.stats.totalSessions + (entry.emotion || 0)) / totalSessions
+          // Award crystals based on energy level (1 crystal per 20% energy)
+          const ENERGY_PER_CRYSTAL = 20
+          const crystalsEarned = entry.energy ? Math.floor(entry.energy / ENERGY_PER_CRYSTAL) : 0
+
+          const { stats } = state.gamification
+          const totalSessions = stats.totalSessions + 1
+          const totalFocusMinutes = stats.totalFocusMinutes + (entry.phase === 'focus' ? durationMinutes : 0)
+          const totalRecoveryMinutes = stats.totalRecoveryMinutes + (entry.phase === 'break' ? durationMinutes : 0)
+
+          // Calculate running averages
+          const averageEnergy = (stats.averageEnergy * stats.totalSessions + (entry.energy ?? 0)) / totalSessions
+          const averageEmotion = (stats.averageEmotion * stats.totalSessions + (entry.emotion ?? 0)) / totalSessions
 
           const newGamification = {
             ...state.gamification,
             totalXP: state.gamification.totalXP + xpEarned,
             crystals: state.gamification.crystals + crystalsEarned,
+            level: calculateLevel(state.gamification.totalXP + xpEarned),
             stats: {
               totalSessions,
               totalFocusMinutes,
@@ -254,7 +279,6 @@ export const useSessionStore = create<SessionStore>()(
               averageEmotion,
             },
           }
-          newGamification.level = calculateLevel(newGamification.totalXP)
 
           return {
             history: newHistory,
@@ -321,13 +345,29 @@ export const useSessionStore = create<SessionStore>()(
       earnXP: (amount: number) => {
         set((state) => {
           const newTotalXP = state.gamification.totalXP + amount
+          const oldLevel = state.gamification.level
           const newLevel = calculateLevel(newTotalXP)
+
+          const newAchievements = [...state.achievements]
+
+          // Check for level up
+          if (newLevel > oldLevel) {
+            newAchievements.push({
+              type: 'level',
+              title: `Level ${newLevel}!`,
+              description: `You've reached level ${newLevel}`,
+              icon: '⬆️',
+              timestamp: Date.now(),
+            })
+          }
+
           return {
             gamification: {
               ...state.gamification,
               totalXP: newTotalXP,
               level: newLevel,
             },
+            achievements: newAchievements,
           }
         })
       },
@@ -335,11 +375,26 @@ export const useSessionStore = create<SessionStore>()(
       awardBadge: (badgeId: string) => {
         set((state) => {
           if (!state.gamification.badges.includes(badgeId)) {
+            const badge = BADGES.find(b => b.id === badgeId)
+            const newAchievements = [...state.achievements]
+
+            if (badge) {
+              newAchievements.push({
+                type: 'badge',
+                title: badge.title,
+                description: badge.description,
+                icon: badge.icon,
+                timestamp: Date.now(),
+                rarity: badge.rarity,
+              })
+            }
+
             return {
               gamification: {
                 ...state.gamification,
                 badges: [...state.gamification.badges, badgeId],
               },
+              achievements: newAchievements,
             }
           }
           return state
@@ -358,6 +413,21 @@ export const useSessionStore = create<SessionStore>()(
       spendCrystals: (skillId: string, cost: number) => {
         set((state) => {
           if (state.gamification.crystals >= cost && !state.gamification.unlockedSkills.includes(skillId)) {
+            const skill = SKILLS.find(s => s.id === skillId)
+            const newAchievements = [...state.achievements]
+
+            if (skill) {
+              newAchievements.push({
+                type: 'skill',
+                title: `${skill.name} Unlocked!`,
+                description: skill.description,
+                icon: skill.icon,
+                timestamp: Date.now(),
+              })
+              // Trigger skill effect
+              skill.effect()
+            }
+
             return {
               gamification: {
                 ...state.gamification,
@@ -365,6 +435,7 @@ export const useSessionStore = create<SessionStore>()(
                 usedCrystals: state.gamification.usedCrystals + cost,
                 unlockedSkills: [...state.gamification.unlockedSkills, skillId],
               },
+              achievements: newAchievements,
             }
           }
           return state
@@ -373,9 +444,9 @@ export const useSessionStore = create<SessionStore>()(
 
       updateStreak: () => {
         set((state) => {
-          const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+          const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD format
           const lastActiveDate = state.gamification.streak.lastActiveDate
-          const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+          const yesterday = new Date(Date.now() - MS_PER_DAY).toISOString().slice(0, 10)
 
           let newCurrentStreak = state.gamification.streak.current
           let newLongestStreak = state.gamification.streak.longest
@@ -383,19 +454,21 @@ export const useSessionStore = create<SessionStore>()(
 
           if (lastActiveDate === today) {
             // Already updated today, do nothing
+            return state
           } else if (lastActiveDate === yesterday) {
-            // Continue streak
+            // Continue streak from yesterday
             newCurrentStreak += 1
             newShieldUsed = false
           } else if (state.gamification.streak.shieldUsed) {
-            // Shield used, reset shield and continue streak
+            // Shield used, consume shield and continue streak
             newCurrentStreak += 1
             newShieldUsed = false
           } else {
-            // Streak broken, reset
+            // Streak broken, reset to 1
             newCurrentStreak = 1
           }
 
+          // Update longest streak if current exceeds it
           if (newCurrentStreak > newLongestStreak) {
             newLongestStreak = newCurrentStreak
           }
@@ -423,6 +496,12 @@ export const useSessionStore = create<SessionStore>()(
           }
         })
       },
+
+      dismissAchievement: (timestamp: number) => {
+        set((state) => ({
+          achievements: state.achievements.filter(a => a.timestamp !== timestamp),
+        }))
+      },
     }),
     {
       name: SESSION_STORAGE_KEY,
@@ -439,45 +518,10 @@ export const useSessionStore = create<SessionStore>()(
 export const useCurrentPhase = () =>
   useSessionStore((state) => state.phaseQueue[state.currentIndex])
 
+/**
+ * Resets the session store to its initial state.
+ * This clears all history, settings, and gamification progress.
+ */
 export const resetSessionStore = () => {
-  const preset = findPreset(DEFAULT_PRESET_ID)
-  const queue = buildPhaseQueue(preset)
-  const first = queue[0]
-
-  useSessionStore.setState({
-    status: 'idle',
-    phaseQueue: queue,
-    currentIndex: 0,
-    remainingMs: first?.durationMs ?? 0,
-    startedAt: undefined,
-    pendingFeedback: undefined,
-    history: [],
-    settings: {
-      activePresetId: preset.id,
-      autoAdvance: false,
-      soundEnabled: true,
-      vibrationsEnabled: false,
-    },
-    gamification: {
-      level: 0,
-      totalXP: 0,
-      crystals: 0,
-      usedCrystals: 0,
-      badges: [],
-      unlockedSkills: [],
-      streak: {
-        current: 0,
-        longest: 0,
-        lastActiveDate: '',
-        shieldUsed: false,
-      },
-      stats: {
-        totalSessions: 0,
-        totalFocusMinutes: 0,
-        totalRecoveryMinutes: 0,
-        averageEnergy: 0,
-        averageEmotion: 0,
-      },
-    },
-  })
+  useSessionStore.setState(createInitialState())
 }
